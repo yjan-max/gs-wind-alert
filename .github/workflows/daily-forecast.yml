@@ -1,0 +1,23 @@
+name: 고성 당일 풍속 예보 알림
+
+on:
+  schedule:
+    - cron: "30 0 * * *"  # 매일 KST 09:30 (UTC 00:30)
+  workflow_dispatch:
+
+jobs:
+  daily-forecast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - env:
+          KMA_API_KEY: ${{ secrets.KMA_API_KEY }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_USER_MENTION: ${{ secrets.SLACK_USER_MENTION }}
+          KMA_NX: ${{ vars.KMA_NX }}
+          KMA_NY: ${{ vars.KMA_NY }}
+        run: python daily_forecast.py
