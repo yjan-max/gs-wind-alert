@@ -186,6 +186,7 @@ def main():
         f"{SLACK_USER_MENTION} *[맹그로브 고성] 오늘의 풍속 예보 ({md})*",
         "",
         summary_line(max_wsd),
+        "",
     ]
 
     if today_groups:
