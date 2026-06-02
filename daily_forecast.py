@@ -14,9 +14,9 @@ SLACK_USER_MENTION = os.environ.get("SLACK_USER_MENTION", "<@U0AG0G63PTR>")
 NX = int(os.environ.get("KMA_NX", "87"))
 NY = int(os.environ.get("KMA_NY", "131"))
 
-# 강풍주의보 기준 14 m/s, 90% 임박선 12.6 m/s
-THRESHOLD_AVG_WIND = 12.6
-WARN_BASE = 14.0
+# 기상청 강풍 기준 (평균 풍속)
+WARN_BASE = 14.0   # 강풍주의보
+ALERT_BASE = 21.0  # 강풍경보
 
 KST = datetime.timezone(datetime.timedelta(hours=9))
 FCST_URL = "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
@@ -152,11 +152,11 @@ def fmt_row(g):
 
 
 def summary_line(max_wsd):
+    if max_wsd >= ALERT_BASE:
+        return f"🚨 *최고 풍속 {max_wsd:.1f} m/s — 강풍경보 기준 → 강풍 대비 점검 진행*"
     if max_wsd >= WARN_BASE:
-        return f"🚨 최고 풍속 {max_wsd:.1f} m/s (강풍주의보 기준 도달) → 루프탑 및 자전거 점검 필요"
-    if max_wsd >= THRESHOLD_AVG_WIND:
-        return f"⚠️ 최고 풍속 {max_wsd:.1f} m/s (강풍주의보 임박) → 루프탑 사전 점검 권장"
-    return f"📊 최고 풍속 {max_wsd:.1f} m/s (강풍 우려 없음) — 일반 운영 OK"
+        return f"⚠️ *최고 풍속 {max_wsd:.1f} m/s — 강풍주의보 기준 → 강풍 대비 점검 진행*"
+    return f"📊 최고 풍속 {max_wsd:.1f} m/s — 상시 정비 진행"
 
 
 def main():
@@ -200,7 +200,7 @@ def main():
 
     lines += [
         "",
-        f"_발표: {base_date[:4]}-{base_date[4:6]}-{base_date[6:8]} {base_time[:2]}시 단기예보 · 격자({NX},{NY})_",
+        f"_발표: {base_date[:4]}-{base_date[4:6]}-{base_date[6:8]} {base_time[:2]}시 단기예보_",
     ]
 
     post_slack("\n".join(lines))
