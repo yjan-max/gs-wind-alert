@@ -2,7 +2,7 @@ name: 고성 당일 풍속 예보 알림
 
 on:
   schedule:
-    - cron: "30 0 * * *"  # 매일 KST 09:30 (UTC 00:30)
+    - cron: "10 0 * * *"  # 매일 KST 09:10 (UTC 00:10)
   workflow_dispatch:
 
 jobs:
