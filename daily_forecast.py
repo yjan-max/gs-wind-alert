@@ -153,10 +153,10 @@ def fmt_row(g):
 
 def summary_line(max_wsd):
     if max_wsd >= ALERT_BASE:
-        return f"> 🚨 *최고 풍속 {max_wsd:.1f} m/s — 강풍경보 기준 → 강풍 대비 점검 진행*"
+        return f"🚨 *최고 풍속 {max_wsd:.1f} m/s — 강풍경보 기준 → 강풍 대비 점검 진행*"
     if max_wsd >= WARN_BASE:
-        return f"> ⚠️ *최고 풍속 {max_wsd:.1f} m/s — 강풍주의보 기준 → 강풍 대비 점검 진행*"
-    return f"> 📊 *최고 풍속 {max_wsd:.1f} m/s — 상시 정비 진행*"
+        return f"🚨 *최고 풍속 {max_wsd:.1f} m/s — 강풍주의보 기준 → 강풍 대비 점검 진행*"
+    return f"🔔 *최고 풍속 {max_wsd:.1f} m/s — 상시 정비 진행*"
 
 
 def main():
