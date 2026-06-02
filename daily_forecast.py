@@ -1,6 +1,6 @@
 """
-고성 당일 풍속 예보 - 매일 KST 09:30 발송.
-단기예보 API로 오늘 09~24시 풍속 흐름을 Slack #gs-routine 에 보냄.
+[맹그로브 고성] 당일 풍속 예보 - 매일 KST 09:10 발송.
+오늘 09시~24시 + 내일 00시~09시 풍속을 3시간 구간으로 묶어 Slack #gs-routine 에 보냄.
 """
 import os
 import datetime
@@ -13,6 +13,7 @@ SLACK_USER_MENTION = os.environ.get("SLACK_USER_MENTION", "<@U0AG0G63PTR>")
 NX = int(os.environ.get("KMA_NX", "87"))
 NY = int(os.environ.get("KMA_NY", "131"))
 
+# 강풍주의보 기준 14 m/s, 90% 임박선 12.6 m/s
 THRESHOLD_AVG_WIND = 12.6
 WARN_BASE = 14.0
 
@@ -26,6 +27,9 @@ DIR_KR = {"N": "북", "NNE": "북북동", "NE": "북동", "ENE": "동북동",
           "S": "남", "SSW": "남남서", "SW": "남서", "WSW": "서남서",
           "W": "서", "WNW": "서북서", "NW": "북서", "NNW": "북북서"}
 
+GROUPS_TODAY = [9, 12, 15, 18, 21]
+GROUPS_TOMORROW = [0, 3, 6]
+
 
 def deg_to_dir(deg):
     idx = int((float(deg) + 11.25) // 22.5) % 16
@@ -33,6 +37,7 @@ def deg_to_dir(deg):
 
 
 def latest_base(now):
+    """단기예보 발표시각(02,05,08,11,14,17,20,23) 중 직전 것."""
     bases = [2, 5, 8, 11, 14, 17, 20, 23]
     h = now.hour if now.minute >= 15 else now.hour - 1
     valid = [b for b in bases if b <= h]
@@ -63,62 +68,119 @@ def post_slack(text):
     r.raise_for_status()
 
 
+def collect(items, target_date):
+    by_time = {}
+    for it in items:
+        if it["fcstDate"] != target_date:
+            continue
+        by_time.setdefault(it["fcstTime"], {})[it["category"]] = it["fcstValue"]
+    return by_time
+
+
+def group_3h(by_time, start_hours):
+    """3시간 구간별로 풍속 범위/풍향(중간 시점)/기온 범위 집계."""
+    out = []
+    for s in start_hours:
+        wsds, vecs, tmps = [], [], []
+        for h in range(s, s + 3):
+            d = by_time.get(f"{h:02d}00")
+            if not d:
+                continue
+            if "WSD" in d:
+                wsds.append(float(d["WSD"]))
+            if "VEC" in d:
+                vecs.append(float(d["VEC"]))
+            if "TMP" in d:
+                try:
+                    tmps.append(int(float(d["TMP"])))
+                except ValueError:
+                    pass
+        if not wsds:
+            continue
+        vec_mid = vecs[len(vecs) // 2] if vecs else None
+        out.append({
+            "label": f"{s:02d}~{s + 3:02d}시",
+            "wsd_min": min(wsds),
+            "wsd_max": max(wsds),
+            "vec": deg_to_dir(vec_mid) if vec_mid is not None else "-",
+            "tmp_min": min(tmps) if tmps else None,
+            "tmp_max": max(tmps) if tmps else None,
+        })
+    return out
+
+
+def fmt_wsd(g):
+    lo, hi = g["wsd_min"], g["wsd_max"]
+    if abs(lo - hi) < 0.05:
+        return f"{lo:.1f} m/s"
+    return f"{lo:.1f}~{hi:.1f} m/s"
+
+
+def fmt_temp(g):
+    lo, hi = g["tmp_min"], g["tmp_max"]
+    if lo is None:
+        return "-"
+    if lo == hi:
+        return f"{lo}℃"
+    return f"{lo}~{hi}℃"
+
+
+def fmt_row(g):
+    return f"• {g['label']}: {fmt_wsd(g)} · {g['vec']} · {fmt_temp(g)}"
+
+
+def summary_line(max_wsd):
+    if max_wsd >= WARN_BASE:
+        return f"🚨 최고 풍속 {max_wsd:.1f} m/s (강풍주의보 기준 도달) → 루프탑 및 자전거 점검 필요"
+    if max_wsd >= THRESHOLD_AVG_WIND:
+        return f"⚠️ 최고 풍속 {max_wsd:.1f} m/s (강풍주의보 임박) → 루프탑 사전 점검 권장"
+    return f"📊 최고 풍속 {max_wsd:.1f} m/s (강풍 우려 없음) — 일반 운영 OK"
+
+
 def main():
     now = datetime.datetime.now(KST)
-    today = now.strftime("%Y%m%d")
+    today_str = now.strftime("%Y%m%d")
+    tomorrow_str = (now + datetime.timedelta(days=1)).strftime("%Y%m%d")
+    md = f"{today_str[4:6]}/{today_str[6:8]}"
     base_date, base_time = latest_base(now)
 
     try:
         items = fetch_fcst(base_date, base_time)
     except Exception as e:
-        post_slack(f"{SLACK_USER_MENTION} ⚠️ [고성 당일 예보] KMA API 호출 실패: {e}")
+        post_slack(f"{SLACK_USER_MENTION} ⚠️ *[맹그로브 고성] 풍속 예보 발송 실패*\n\nKMA API 호출 오류: {e}")
         return
 
-    by_time = {}
-    for it in items:
-        if it["fcstDate"] != today:
-            continue
-        t = it["fcstTime"]
-        by_time.setdefault(t, {})[it["category"]] = it["fcstValue"]
+    today_groups = group_3h(collect(items, today_str), GROUPS_TODAY)
+    tomorrow_groups = group_3h(collect(items, tomorrow_str), GROUPS_TOMORROW)
 
-    rows = []
-    for t in sorted(by_time.keys()):
-        if int(t) < 900:
-            continue
-        d = by_time[t]
-        if "WSD" not in d:
-            continue
-        wsd = float(d["WSD"])
-        vec = deg_to_dir(d["VEC"]) if "VEC" in d else "-"
-        tmp = d.get("TMP", "-")
-        rows.append((t, wsd, vec, tmp))
-
-    if not rows:
-        post_slack(f"{SLACK_USER_MENTION} ⚠️ [고성 당일 예보] 응답에서 오늘 예보 없음 (base={base_date} {base_time})")
+    if not today_groups and not tomorrow_groups:
+        post_slack(f"{SLACK_USER_MENTION} ⚠️ *[맹그로브 고성] 풍속 예보 데이터 없음* (base={base_date} {base_time})")
         return
 
-    max_wsd = max(r[1] for r in rows)
-    over_rows = [r for r in rows if r[1] >= THRESHOLD_AVG_WIND]
+    all_groups = today_groups + tomorrow_groups
+    max_wsd = max(g["wsd_max"] for g in all_groups)
 
-    lines = [f"{SLACK_USER_MENTION} 🌬️ *고성 오늘의 풍속 예보 ({today[4:6]}/{today[6:8]})*", ""]
-    lines.append("```")
-    lines.append("시각   풍속        풍향      기온")
-    for t, wsd, vec, tmp in rows:
-        mark = " 🚨" if wsd >= WARN_BASE else (" ⚠️" if wsd >= THRESHOLD_AVG_WIND else "")
-        lines.append(f"{t[:2]}시   {wsd:>4.1f} m/s   {vec:<5}   {tmp:>3}℃{mark}")
-    lines.append("```")
-    lines.append("")
-    lines.append(f"*오늘 최고 풍속 전망*: `{max_wsd:.1f} m/s`")
-    if over_rows:
-        first_t = over_rows[0][0]
-        lines.append(f"⚠️ *임계값(12.6m/s) 초과 시점*: {len(over_rows)}건 (첫 시점 {first_t[:2]}시)")
-        lines.append("→ 루프탑 가구 사전 결박/이동 검토 권장")
-    else:
-        lines.append("_임계값 초과 없음 — 일반 운영 OK_")
-    lines.append("")
-    lines.append(f"_발표: {base_date[:4]}-{base_date[4:6]}-{base_date[6:8]} {base_time[:2]}시 단기예보 · 격자({NX},{NY})_")
+    lines = [
+        f"{SLACK_USER_MENTION} *[맹그로브 고성] 오늘의 풍속 예보 ({md})*",
+        "",
+        summary_line(max_wsd),
+    ]
+
+    if today_groups:
+        lines += ["", "🕐 *오늘의 풍속*", ""]
+        lines += [fmt_row(g) for g in today_groups]
+
+    if tomorrow_groups:
+        lines += ["", "🌅 *내일의 풍속*", ""]
+        lines += [fmt_row(g) for g in tomorrow_groups]
+
+    lines += [
+        "",
+        f"_발표: {base_date[:4]}-{base_date[4:6]}-{base_date[6:8]} {base_time[:2]}시 단기예보 · 격자({NX},{NY})_",
+    ]
+
     post_slack("\n".join(lines))
-    print(f"[OK] 당일 예보 발송. 최고 {max_wsd} m/s, 임계값 초과 {len(over_rows)}건.")
+    print(f"[OK] 발송. 최고 {max_wsd} m/s, 오늘 {len(today_groups)}구간, 내일 {len(tomorrow_groups)}구간.")
 
 
 if __name__ == "__main__":
