@@ -4,6 +4,7 @@
 """
 import os
 import datetime
+import unicodedata
 import requests
 
 KMA_API_KEY = os.environ["KMA_API_KEY"]
@@ -29,6 +30,23 @@ DIR_KR = {"N": "북", "NNE": "북북동", "NE": "북동", "ENE": "동북동",
 
 GROUPS_TODAY = [9, 12, 15, 18, 21]
 GROUPS_TOMORROW = [0, 3, 6]
+
+# 표 컬럼 폭 (한글 1글자 = 2폭 기준)
+TIME_W = 9
+WIND_W = 16
+DIR_W = 9
+TEMP_W = 8
+
+
+def disp_len(s):
+    n = 0
+    for c in s:
+        n += 2 if unicodedata.east_asian_width(c) in ("W", "F") else 1
+    return n
+
+
+def pad(s, width):
+    return s + " " * max(0, width - disp_len(s))
 
 
 def deg_to_dir(deg):
@@ -125,8 +143,12 @@ def fmt_temp(g):
     return f"{lo}~{hi}℃"
 
 
+def fmt_header():
+    return pad("시간대", TIME_W) + pad("풍속", WIND_W) + pad("풍향", DIR_W) + pad("기온", TEMP_W)
+
+
 def fmt_row(g):
-    return f"• {g['label']}: {fmt_wsd(g)} · {g['vec']} · {fmt_temp(g)}"
+    return pad(g["label"], TIME_W) + pad(fmt_wsd(g), WIND_W) + pad(g["vec"], DIR_W) + pad(fmt_temp(g), TEMP_W)
 
 
 def summary_line(max_wsd):
@@ -167,12 +189,14 @@ def main():
     ]
 
     if today_groups:
-        lines += ["", "🕐 *오늘의 풍속*", ""]
+        lines += ["", "🕐 *오늘의 풍속*", "```", fmt_header()]
         lines += [fmt_row(g) for g in today_groups]
+        lines += ["```"]
 
     if tomorrow_groups:
-        lines += ["", "🌅 *내일의 풍속*", ""]
+        lines += ["", "🌅 *내일의 풍속*", "```", fmt_header()]
         lines += [fmt_row(g) for g in tomorrow_groups]
+        lines += ["```"]
 
     lines += [
         "",
