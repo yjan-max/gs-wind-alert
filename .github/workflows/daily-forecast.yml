@@ -1,8 +1,7 @@
 name: 고성 당일 풍속 예보 알림
 
 on:
-  schedule:
-    - cron: "10 0 * * *"  # 매일 KST 09:10 (UTC 00:10)
+  # 정기 실행은 외부 cron-job.org(KST 09:10)가 담당. GitHub 내장 cron은 지연·누락이 잦아 제거함.
   workflow_dispatch:
 
 jobs:
