@@ -1,8 +1,7 @@
 name: 고성 풍속 자동 알림
 
 on:
-  schedule:
-    - cron: "*/30 * * * *"
+  # 정기 실행은 외부 cron-job.org(매 30분)가 담당. GitHub 내장 cron은 지연·누락이 잦아 제거함.
   workflow_dispatch:
 
 jobs:
