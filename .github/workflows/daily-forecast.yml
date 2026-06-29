@@ -7,6 +7,8 @@ on:
 jobs:
   daily-forecast:
     runs-on: ubuntu-latest
+    permissions:
+      actions: read   # check_wind 워크플로우 최근 실행시각 조회용(dead-man 점검)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -19,4 +21,5 @@ jobs:
           SLACK_USER_MENTION: ${{ secrets.SLACK_USER_MENTION }}
           KMA_NX: ${{ vars.KMA_NX }}
           KMA_NY: ${{ vars.KMA_NY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # dead-man: check_wind 최근 실행 점검(actions:read)
         run: python daily_forecast.py

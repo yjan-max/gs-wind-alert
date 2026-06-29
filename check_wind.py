@@ -3,6 +3,7 @@
 """
 import os
 import sys
+import time
 import datetime
 import requests
 
@@ -109,10 +110,21 @@ def main():
         sys.exit(1)
     current = ncst.get("WSD", 0.0)
 
+    # 예보(FCST) 호출: 일시 오류는 1회 재시도, 그래도 실패하면 '조용히 삼키지 않고' 슬랙 알림.
+    # (실황은 정상이라 현재 풍속 감시는 계속하되, 향후 6시간 예보를 못 본다는 사실을 알린다.)
     fb_date, fb_time = fcst_base(now)
-    try:
-        fcst = fetch_fcst(fb_date, fb_time)
-    except Exception:
+    fcst = None
+    last_err = None
+    for attempt in range(2):
+        try:
+            fcst = fetch_fcst(fb_date, fb_time)
+            break
+        except Exception as e:
+            last_err = e
+            if attempt == 0:
+                time.sleep(3)
+    if fcst is None:
+        post_slack(f"⚠️ [고성 풍속 모니터링] KMA 예보 API 호출 실패(2회) — 향후 6시간 예보 확인 불가(현재 풍속 {current} m/s 는 정상 수집됨): {last_err}")
         fcst = {}
     fcst_over = [(ts, v) for ts, v in fcst.items() if v >= THRESHOLD_AVG_WIND]
 

@@ -159,8 +159,34 @@ def summary_line(max_wsd):
     return f"🔔 *최고 풍속 {max_wsd:.1f} m/s — 상시 정비 진행*"
 
 
+def check_wind_watch_alive():
+    """30분 강풍 감시(check_wind)가 최근에 돌았는지 GitHub API로 점검 → 멈춰 있으면 슬랙 경고(dead-man).
+    daily_forecast 는 외부 트리거(cron-job.org)로 매일 도니, check_wind 트리거(cron-job.org/GitHub cron)가
+    죽어도 여기서 하루 1회 잡아낸다. 점검 실패는 무시(데일리 예보 발송엔 영향 없음). 2026-06-29 추가."""
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if not token:
+        return
+    try:
+        url = "https://api.github.com/repos/yjan-max/gs-wind-alert/actions/workflows/wind-check.yml/runs?per_page=1"
+        r = requests.get(url, headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}, timeout=15)
+        r.raise_for_status()
+        runs = r.json().get("workflow_runs", [])
+        if not runs:
+            post_slack(f"{SLACK_USER_MENTION} 🔴 *[맹그로브 고성] 30분 강풍 감시 실행 이력 없음* — 트리거 점검 필요")
+            return
+        last = datetime.datetime.strptime(runs[0]["created_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+        age_min = (datetime.datetime.now(datetime.timezone.utc) - last).total_seconds() / 60
+        if age_min > 90:
+            last_kst = last.astimezone(KST).strftime("%m/%d %H:%M")
+            hrs = int(age_min // 60)
+            post_slack(f"{SLACK_USER_MENTION} 🔴 *[맹그로브 고성] 30분 강풍 감시 멈춤 감지* — 마지막 실행 {last_kst}({hrs}시간 전). cron-job.org/GitHub cron 트리거 점검 필요.")
+    except Exception:
+        pass
+
+
 def main():
     now = datetime.datetime.now(KST)
+    check_wind_watch_alive()  # 30분 강풍 감시가 죽었는지 먼저 점검(dead-man)
     today_str = now.strftime("%Y%m%d")
     tomorrow_str = (now + datetime.timedelta(days=1)).strftime("%Y%m%d")
     md = f"{today_str[4:6]}/{today_str[6:8]}"
