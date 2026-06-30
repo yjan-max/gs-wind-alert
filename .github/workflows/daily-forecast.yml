@@ -8,6 +8,7 @@ jobs:
   daily-forecast:
     runs-on: ubuntu-latest
     permissions:
+      contents: read  # private 리포 checkout(클론)용 — 없으면 Repository not found 발생
       actions: read   # check_wind 워크플로우 최근 실행시각 조회용(dead-man 점검)
     steps:
       - uses: actions/checkout@v4
