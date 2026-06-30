@@ -2,10 +2,16 @@
 고성 풍속 모니터링 - 기상청 동네예보 API → 임계값 초과 시 Slack 알림.
 """
 import os
+import re
 import sys
 import time
 import datetime
 import requests
+
+
+def mask_key(e):
+    """에러 메시지에 섞여 나오는 serviceKey 값을 가려 Slack 노출 방지."""
+    return re.sub(r"(serviceKey=)[^&\s]+", r"\1***", str(e))
 
 KMA_API_KEY = os.environ["KMA_API_KEY"]
 SLACK_WEBHOOK_URL = os.environ["SLACK_WEBHOOK_URL"]
@@ -106,7 +112,7 @@ def main():
     try:
         ncst = fetch_ncst(nb_date, nb_time)
     except Exception as e:
-        post_slack(f"⚠️ [고성 풍속 모니터링] KMA 실황 API 호출 실패: {e}")
+        post_slack(f"⚠️ [고성 풍속 모니터링] KMA 실황 API 호출 실패: {mask_key(e)}")
         sys.exit(1)
     current = ncst.get("WSD", 0.0)
 
@@ -124,7 +130,7 @@ def main():
             if attempt == 0:
                 time.sleep(3)
     if fcst is None:
-        post_slack(f"⚠️ [고성 풍속 모니터링] KMA 예보 API 호출 실패(2회) — 향후 6시간 예보 확인 불가(현재 풍속 {current} m/s 는 정상 수집됨): {last_err}")
+        post_slack(f"⚠️ [고성 풍속 모니터링] KMA 예보 API 호출 실패(2회) — 향후 6시간 예보 확인 불가(현재 풍속 {current} m/s 는 정상 수집됨): {mask_key(last_err)}")
         fcst = {}
     fcst_over = [(ts, v) for ts, v in fcst.items() if v >= THRESHOLD_AVG_WIND]
 
