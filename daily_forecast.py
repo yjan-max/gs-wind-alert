@@ -3,9 +3,15 @@
 오늘 09시~24시 + 내일 00시~09시 풍속을 3시간 구간으로 묶어 Slack #gs-routine 에 보냄.
 """
 import os
+import re
 import datetime
 import unicodedata
 import requests
+
+
+def mask_key(e):
+    """에러 메시지에 섞여 나오는 serviceKey 값을 가려 Slack 노출 방지."""
+    return re.sub(r"(serviceKey=)[^&\s]+", r"\1***", str(e))
 
 KMA_API_KEY = os.environ["KMA_API_KEY"]
 SLACK_WEBHOOK_URL = os.environ["SLACK_WEBHOOK_URL"]
@@ -195,7 +201,7 @@ def main():
     try:
         items = fetch_fcst(base_date, base_time)
     except Exception as e:
-        post_slack(f"{SLACK_USER_MENTION} ⚠️ *[맹그로브 고성] 풍속 예보 발송 실패*\n\nKMA API 호출 오류: {e}")
+        post_slack(f"{SLACK_USER_MENTION} ⚠️ *[맹그로브 고성] 풍속 예보 발송 실패*\n\nKMA API 호출 오류: {mask_key(e)}")
         return
 
     today_groups = group_3h(collect(items, today_str), GROUPS_TODAY)
