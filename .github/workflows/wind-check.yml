@@ -7,6 +7,12 @@ on:
     - cron: "*/30 * * * *"
   workflow_dispatch:
 
+# 기상특보 상태파일(warn_state.json) 커밋용 write 필요.
+# ⚠️ private 리포라 permissions 블록을 쓰면 나머지 권한이 none이 됨 → checkout(클론)용 contents 를 반드시 포함.
+#    contents: write 는 read 를 포함하므로 checkout 도 정상.
+permissions:
+  contents: write
+
 jobs:
   check-wind:
     runs-on: ubuntu-latest
@@ -23,3 +29,18 @@ jobs:
           KMA_NX: ${{ vars.KMA_NX }}
           KMA_NY: ${{ vars.KMA_NY }}
         run: python check_wind.py
+      # 기상특보 발효/해제 변화가 있을 때만 warn_state.json 이 바뀜 → 그때만 커밋.
+      # 동시 실행(cron-job.org + 내장 cron) 충돌로 push 실패해도 무시(알림은 이미 전송됨, 다음 주기 정합).
+      - name: Commit warning state if changed
+        if: always()
+        run: |
+          if [ -n "$(git status --porcelain warn_state.json)" ]; then
+            git config user.name "gs-wind-bot"
+            git config user.email "actions@users.noreply.github.com"
+            git add warn_state.json
+            git commit -m "chore: update warn_state"
+            git pull --rebase --autostash origin main || true
+            git push || echo "state push skipped (concurrent run race)"
+          else
+            echo "no warn_state change"
+          fi

@@ -7,6 +7,7 @@ import re
 import datetime
 import unicodedata
 import requests
+import wthr_warn
 
 
 def mask_key(e):
@@ -165,6 +166,22 @@ def summary_line(max_wsd):
     return f"🔔 *최고 풍속 {max_wsd:.1f} m/s — 상시 정비 진행*"
 
 
+def active_warning_line():
+    """현재 발효 중인 고성 기상특보를 한 줄로. 조회 실패해도 풍속 예보엔 영향 없게 여기서 흡수."""
+    try:
+        goseong, all_active = wthr_warn.get_goseong_warnings(KMA_API_KEY)
+        print(f"[특보] 강원 전체 활성: {all_active}")  # 고성 표기 관찰용 로그
+        if goseong:
+            return f"🚨 *현재 발효 특보(고성): {', '.join(goseong)}* — 시설 대비 점검"
+        return "☀️ 현재 발효 중인 기상특보 없음(고성)"
+    except wthr_warn.TransientWarnError as e:
+        print(f"[특보][SKIP] 일시 오류: {wthr_warn.mask_key(e)}")
+        return "⚠️ _기상특보 조회 일시 실패_"
+    except Exception as e:
+        print(f"[특보][ERR] {wthr_warn.mask_key(e)}")
+        return "⚠️ _기상특보 조회 실패 — 기상청 특보 직접 확인 권장_"
+
+
 def check_wind_watch_alive():
     """30분 강풍 감시(check_wind)가 최근에 돌았는지 GitHub API로 점검 → 멈춰 있으면 슬랙 경고(dead-man).
     daily_forecast 는 외부 트리거(cron-job.org)로 매일 도니, check_wind 트리거(cron-job.org/GitHub cron)가
@@ -218,6 +235,7 @@ def main():
         f"{SLACK_USER_MENTION} *[맹그로브 고성] 오늘의 풍속 예보 ({md})*",
         "",
         summary_line(max_wsd),
+        active_warning_line(),
         "",
     ]
 

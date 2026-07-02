@@ -8,9 +8,11 @@
 import os
 import re
 import sys
+import json
 import time
 import datetime
 import requests
+import wthr_warn
 
 KMA_API_KEY = os.environ["KMA_API_KEY"]
 SLACK_WEBHOOK_URL = os.environ["SLACK_WEBHOOK_URL"]
@@ -111,6 +113,68 @@ def post_slack(text):
     r.raise_for_status()
 
 
+# ── 기상특보 변화 감지 (호우/대설/강풍/풍랑/태풍/폭염/한파) ────────────────
+# 30분마다 현재 발효 특보를 상태파일과 비교해, '새 발효/해제'가 있을 때만 알린다(반복 알림 방지).
+# 상태파일은 워크플로우가 변경 시에만 커밋한다. 이 블록의 어떤 오류도 풍속 감시를 막지 않는다.
+WARN_STATE_FILE = "warn_state.json"
+
+
+def load_warn_state():
+    try:
+        with open(WARN_STATE_FILE, encoding="utf-8") as f:
+            return list(json.load(f).get("active", []))
+    except (FileNotFoundError, ValueError):
+        return []
+
+
+def save_warn_state(active, now):
+    with open(WARN_STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump({"active": active, "updated": now.strftime("%Y-%m-%d %H:%M KST")},
+                  f, ensure_ascii=False, indent=1)
+
+
+def build_warn_message(now, added, removed, current):
+    lines = [f"{SLACK_USER_MENTION} 🌧️ *[맹그로브 고성] 기상특보 변경* ({now.strftime('%m/%d %H:%M')})", ""]
+    if added:
+        lines.append(f"🚨 *새로 발효*: {', '.join(added)} — 시설 대비 점검")
+    if removed:
+        lines.append(f"✅ 해제: {', '.join(removed)}")
+    lines.append("")
+    lines.append(f"*현재 발효 중*: {', '.join(current) if current else '없음'}")
+    lines.append("_출처: 기상청 기상특보 (강원)_")
+    return "\n".join(lines)
+
+
+def check_warnings(now):
+    """현재 고성 특보를 이전 상태와 비교 → 변화 시에만 알림 + 상태파일 갱신."""
+    try:
+        goseong, all_active = wthr_warn.get_goseong_warnings(KMA_API_KEY)
+    except wthr_warn.TransientWarnError as e:
+        print(f"[특보][SKIP] 일시 오류: {wthr_warn.mask_key(e)}")
+        return
+    except Exception as e:
+        print(f"[특보][ERR] {wthr_warn.mask_key(e)}")
+        return
+    print(f"[특보] 강원 전체 활성: {all_active}")  # 고성 표기 관찰용 로그
+    prev = load_warn_state()
+    added = [k for k in goseong if k not in prev]
+    removed = [k for k in prev if k not in goseong]
+    if added or removed:
+        post_slack(build_warn_message(now, added, removed, goseong))
+        save_warn_state(goseong, now)
+        print(f"[특보] 변화 감지 → 알림. added={added} removed={removed} 현재={goseong}")
+    else:
+        print(f"[특보] 변화 없음. 현재={goseong}")
+
+
+def safe_check_warnings(now):
+    """특보 로직의 어떤 실패도 풍속 감시에 영향 주지 않도록 최종 방어."""
+    try:
+        check_warnings(now)
+    except Exception as e:
+        print(f"[특보][FATAL-무시] {wthr_warn.mask_key(e)}")
+
+
 def build_message(now, current, fcst_over):
     lines = [f"{SLACK_USER_MENTION} 🌬️ *고성 강풍 알림 — 루프탑 가구 결박/이동 검토*", ""]
     lines.append(f"*현재 풍속*: `{current:.1f} m/s` (관측 {now.strftime('%m/%d %H시')} 기준)")
@@ -135,6 +199,9 @@ def build_message(now, current, fcst_over):
 
 def main():
     now = datetime.datetime.now(KST)
+
+    # 0) 기상특보 변화 감지 — 풍속과 독립. 실패해도 아래 풍속 감시는 그대로 진행.
+    safe_check_warnings(now)
 
     # 1) 실황(현재 풍속) — 감시의 핵심 신호.
     nb_date, nb_time = ncst_base(now)
