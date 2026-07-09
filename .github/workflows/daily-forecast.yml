@@ -1,7 +1,12 @@
 name: 고성 당일 풍속 예보 알림
 
 on:
-  # 정기 실행은 외부 cron-job.org(KST 09:10)가 담당. GitHub 내장 cron은 지연·누락이 잦아 제거함.
+  # 1차 정기 실행 = 외부 cron-job.org(KST 09:10).
+  # 백업 = GitHub 내장 cron(KST 09:40 = 00:40 UTC). cron-job.org 가 죽어도(2026-06 약 3주 사망 전례)
+  # 당일예보와 dead-man 이 계속 돌게 한다. 내장 cron 은 지연 가능하나 죽은 것보단 낫다(wind-check 과 동일 사상).
+  # 이중 발송은 daily_forecast.py 의 already_posted_today() 가 '오늘 이미 성공 발송' 이면 skip 해서 방지한다.
+  schedule:
+    - cron: "40 0 * * *"
   workflow_dispatch:
 
 jobs:
