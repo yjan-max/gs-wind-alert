@@ -207,8 +207,36 @@ def check_wind_watch_alive():
         pass
 
 
+def already_posted_today():
+    """오늘(KST) daily-forecast 가 이미 성공 실행됐는지 GitHub API 로 확인 → 백업 트리거의 이중 발송 방지.
+    cron-job.org(09:10)가 정상이면 그 run 이 success 로 남고, GitHub cron 백업(09:40)은 이걸 보고 skip.
+    cron-job.org 가 죽어 오늘 success 가 없으면 백업이 이어받아 발송(이 함수가 False 반환).
+    현재 진행 중인 run 은 conclusion 이 아직 없으므로 자기 자신은 안 셈. 토큰 없으면 판단 불가 → False(그냥 발송)."""
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if not token:
+        return False
+    try:
+        url = "https://api.github.com/repos/yjan-max/gs-wind-alert/actions/workflows/daily-forecast.yml/runs?per_page=20"
+        r = requests.get(url, headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}, timeout=15)
+        r.raise_for_status()
+        today = datetime.datetime.now(KST).strftime("%Y-%m-%d")
+        for run in r.json().get("workflow_runs", []):
+            if run.get("conclusion") != "success":
+                continue
+            created_kst = datetime.datetime.strptime(run["created_at"], "%Y-%m-%dT%H:%M:%SZ").replace(
+                tzinfo=datetime.timezone.utc).astimezone(KST).strftime("%Y-%m-%d")
+            if created_kst == today:
+                return True
+        return False
+    except Exception:
+        return False
+
+
 def main():
     now = datetime.datetime.now(KST)
+    if already_posted_today():
+        print("[SKIP] 오늘 이미 예보 발송됨 — 백업 트리거 중복 방지.")
+        return
     check_wind_watch_alive()  # 30분 강풍 감시가 죽었는지 먼저 점검(dead-man)
     today_str = now.strftime("%Y%m%d")
     tomorrow_str = (now + datetime.timedelta(days=1)).strftime("%Y%m%d")
