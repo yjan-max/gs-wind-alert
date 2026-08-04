@@ -4,6 +4,7 @@
 """
 import os
 import re
+import time
 import datetime
 import unicodedata
 import requests
@@ -27,6 +28,11 @@ ALERT_BASE = 21.0  # 강풍경보
 
 KST = datetime.timezone(datetime.timedelta(hours=9))
 FCST_URL = "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
+
+# 일시 오류로 보고 재시도할 조건 (check_wind.py 와 동일 정책)
+RETRY_HTTP = {429, 500, 502, 503, 504}
+RETRY_RESULT_CODES = {"22"}   # LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS (호출량 일시 초과)
+BACKOFF = [3, 8, 20]          # 재시도 간 대기(초). 총 최대 4회 시도.
 
 DIRS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
         "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
@@ -72,7 +78,15 @@ def latest_base(now):
     return y.strftime("%Y%m%d"), "2300"
 
 
+class TransientAPIError(Exception):
+    """일시적(429/5xx/타임아웃/호출량 초과) 오류 — 재시도로 회복 가능한 종류."""
+
+
 def fetch_fcst(base_date, base_time):
+    """기상청 단기예보 호출 + 일시오류 재시도.
+
+    data.go.kr 이 간헐적으로 연결 타임아웃을 내는데, 1회 호출로 끝내면 그때마다
+    '발송 실패' 알림이 떴다. check_wind.py 와 같은 백오프 재시도로 자가 회복시킨다."""
     params = {
         "serviceKey": KMA_API_KEY,
         "numOfRows": "1000",
@@ -83,9 +97,31 @@ def fetch_fcst(base_date, base_time):
         "nx": NX,
         "ny": NY,
     }
-    r = requests.get(FCST_URL, params=params, timeout=30)
-    r.raise_for_status()
-    return r.json()["response"]["body"]["items"]["item"]
+    last = None
+    for attempt in range(len(BACKOFF) + 1):
+        try:
+            r = requests.get(FCST_URL, params=params, timeout=30)
+            if r.status_code in RETRY_HTTP:
+                raise TransientAPIError(f"HTTP {r.status_code}")
+            r.raise_for_status()
+            body = r.json()["response"]
+            code = body["header"]["resultCode"]
+            if code != "00":
+                msg = f'resultCode {code} ({body["header"].get("resultMsg", "")})'
+                if code in RETRY_RESULT_CODES:
+                    raise TransientAPIError(msg)
+                raise RuntimeError(msg)          # 키오류·무효요청 등 → 진짜 오류(전파)
+            return body["body"]["items"]["item"]
+        except (requests.Timeout, requests.ConnectionError) as e:
+            last = TransientAPIError(mask_key(e))
+        except TransientAPIError as e:
+            last = e
+        # 여기 도달 = 일시오류. 남은 시도가 있으면 대기 후 재시도, 없으면 포기.
+        if attempt < len(BACKOFF):
+            print(f"[예보][재시도 {attempt + 1}/{len(BACKOFF)}] {mask_key(last)}")
+            time.sleep(BACKOFF[attempt])
+        else:
+            raise last
 
 
 def post_slack(text):
@@ -246,7 +282,7 @@ def main():
     try:
         items = fetch_fcst(base_date, base_time)
     except Exception as e:
-        post_slack(f"{SLACK_USER_MENTION} ⚠️ *[맹그로브 고성] 풍속 예보 발송 실패*\n\nKMA API 호출 오류: {mask_key(e)}")
+        post_slack(f"{SLACK_USER_MENTION} ⚠️ *[맹그로브 고성] 풍속 예보 발송 실패* (재시도 {len(BACKOFF) + 1}회 모두 실패)\n\nKMA API 호출 오류: {mask_key(e)}")
         return
 
     today_groups = group_3h(collect(items, today_str), GROUPS_TODAY)
