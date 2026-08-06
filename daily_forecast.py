@@ -4,6 +4,7 @@
 """
 import os
 import re
+import sys
 import time
 import datetime
 import unicodedata
@@ -283,14 +284,14 @@ def main():
         items = fetch_fcst(base_date, base_time)
     except Exception as e:
         post_slack(f"{SLACK_USER_MENTION} ⚠️ *[맹그로브 고성] 풍속 예보 발송 실패* (재시도 {len(BACKOFF) + 1}회 모두 실패)\n\nKMA API 호출 오류: {mask_key(e)}")
-        return
+        sys.exit(1)
 
     today_groups = group_3h(collect(items, today_str), GROUPS_TODAY)
     tomorrow_groups = group_3h(collect(items, tomorrow_str), GROUPS_TOMORROW)
 
     if not today_groups and not tomorrow_groups:
         post_slack(f"{SLACK_USER_MENTION} ⚠️ *[맹그로브 고성] 풍속 예보 데이터 없음* (base={base_date} {base_time})")
-        return
+        sys.exit(1)
 
     all_groups = today_groups + tomorrow_groups
     max_wsd = max(g["wsd_max"] for g in all_groups)
