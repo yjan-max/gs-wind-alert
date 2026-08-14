@@ -1,0 +1,28 @@
+name: 고성 강풍 감시 워치독 (자동 복구)
+
+on:
+  # 강풍 감시(wind-check)가 죽었을 때 잡아내 자동 재실행하는 3중 백업.
+  # cron-job.org(1차)와 wind-check.yml 내장 */30 cron(2차)이 둘 다 멈춰도
+  # 이 워크플로 자체 스케줄(독립적으로 매시 정각)이 살아있으면 감지→재트리거한다.
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read   # private 리포 checkout용
+  actions: write   # wind-check.yml 실행 이력 조회 + workflow_dispatch 재트리거용
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_USER_MENTION: ${{ secrets.SLACK_USER_MENTION }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python watchdog.py
