@@ -70,7 +70,7 @@ repo 페이지 > **Settings** > 좌측 **Secrets and variables > Actions** > **N
 |------|-------|
 | `KMA_API_KEY` | 1단계에서 받은 기상청 일반 인증키(Decoding) |
 | `SLACK_WEBHOOK_URL` | 2단계에서 받은 Slack Webhook URL |
-| `SLACK_USER_MENTION` | `<@U0AG0G63PTR>` (본인 Slack 사용자 ID) |
+| `SLACK_USER_MENTION` | `<@U012ABCDEF>` 형식의 본인 Slack 사용자 ID (알림을 받을 사람) |
 
 같은 페이지 **Variables** 탭에서 (Secrets 아님):
 

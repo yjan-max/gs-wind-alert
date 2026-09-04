@@ -14,7 +14,10 @@ WORKFLOW = "wind-check.yml"
 STALE_MIN = 90
 
 SLACK_WEBHOOK_URL = os.environ["SLACK_WEBHOOK_URL"]
-SLACK_USER_MENTION = os.environ.get("SLACK_USER_MENTION", "<@U0AG0G63PTR>")
+SLACK_USER_MENTION = os.environ.get("SLACK_USER_MENTION", "")
+if not SLACK_USER_MENTION:
+    # 멘션이 빠지면 슬랙 알림이 안 떠서 못 보고 지나간다 — 조용히 넘어가지 않고 로그에 남긴다.
+    print("[WARN] SLACK_USER_MENTION 미설정 — 멘션 없이 전송됨")
 KST = datetime.timezone(datetime.timedelta(hours=9))
 
 
