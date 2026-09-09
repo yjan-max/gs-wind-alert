@@ -35,7 +35,11 @@ FCST_URL = "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSr
 # 일시 오류로 보고 재시도할 조건
 RETRY_HTTP = {429, 500, 502, 503, 504}
 RETRY_RESULT_CODES = {"22"}   # LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS (호출량 일시 초과)
-BACKOFF = [3, 8, 20]          # 재시도 간 대기(초). 총 최대 4회 시도.
+BACKOFF = [2, 5]              # 재시도 간 대기(초). 총 최대 3회 시도.
+# (연결/응답 대기, 초). 정상일 때 이 API는 1초 안에 답한다(2026-09-09 실측: 특보+실황+예보 3콜에 총 2초).
+# 예전엔 timeout=30 × 4회라 기상청이 응답을 안 주면 한 실행이 151초를 매달렸다 — 30분 주기 감시에서
+# 그만큼 감지가 늦어지는 셈이라, 빨리 포기하고 다음 주기에 맡기는 쪽이 낫다(최악 3×12+7=43초).
+TIMEOUT = (4, 8)
 
 NO_DATA_CODE = "03"           # NO_DATA — 기상청이 해당 시각 자료를 아직 안 올렸거나 누락한 상태
 # 실황 공백이 이만큼 이어지면 그때 1회만 알린다(30분마다 같은 알림이 반복되는 것을 막기 위함).
@@ -72,7 +76,7 @@ def _call(url, base_date, base_time, num_rows):
     last = None
     for attempt in range(len(BACKOFF) + 1):
         try:
-            r = requests.get(url, params=params, timeout=30)
+            r = requests.get(url, params=params, timeout=TIMEOUT)
             if r.status_code in RETRY_HTTP:
                 raise TransientAPIError(f"HTTP {r.status_code}")
             r.raise_for_status()
