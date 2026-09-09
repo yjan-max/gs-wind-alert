@@ -29,7 +29,10 @@ REGION_TOKENS = ["고성"]
 
 # 일시 오류로 보고 재시도할 HTTP 상태
 RETRY_HTTP = {429, 500, 502, 503, 504}
-BACKOFF = [3, 8]  # 총 최대 3회 시도
+BACKOFF = [2]     # 총 최대 2회 시도
+# 특보 조회는 풍속 감시의 곁가지다(실패해도 풍속 감시는 그대로 진행) → 오래 매달리지 않는다.
+# 예전 timeout=25 × 3회는 응답이 없을 때 86초를 썼다. 지금은 최악 2×12+2=26초.
+TIMEOUT = (4, 8)  # (연결, 응답) 대기 초
 
 # "o 호우주의보 : 강원도(춘천)" 같은 줄에서 (종류어간)(레벨) : (지역) 추출
 LINE_RE = re.compile(r"([가-힣]{2,8})(주의보|경보)\s*[:：]\s*(.+)")
@@ -55,7 +58,7 @@ def _fetch_pwn_item(api_key, stn=STN_GANGWON):
     last = None
     for attempt in range(len(BACKOFF) + 1):
         try:
-            r = requests.get(PWN_URL, params=params, timeout=25)
+            r = requests.get(PWN_URL, params=params, timeout=TIMEOUT)
             if r.status_code in RETRY_HTTP:
                 raise TransientWarnError(f"HTTP {r.status_code}")
             r.raise_for_status()
